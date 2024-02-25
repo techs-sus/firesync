@@ -13,3 +13,5 @@ full_moon = { version = "0.19.0", features = ["roblox"] }
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 iced = "0.12"
+native-dialog = "0.7.0"
+iced_core = "0.12.1"

@@ -184,7 +184,7 @@ pub fn patch_directory(path: PathBuf) -> anyhow::Result<()> {
 	Ok(())
 }
 
-pub fn build(input: PathBuf, output: PathBuf) -> anyhow::Result<()> {
+pub fn build(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 	if input.is_dir() != output.is_dir() {
 		error!("The input path should be the same type of PathBuf as the output path.");
 		return Ok(());
