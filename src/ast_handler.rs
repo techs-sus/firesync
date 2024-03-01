@@ -1,7 +1,10 @@
+use anyhow::Context as _;
 use darklua_core::{Options, Resources};
 use full_moon::{ast, tokenizer, visitors::VisitorMut};
 use std::{fs, path::PathBuf};
 use tracing::{error, info};
+
+use crate::error::Error;
 
 #[derive(Default)]
 struct PatchVisitor {
@@ -154,11 +157,11 @@ impl VisitorMut for PatchVisitor {
 	}
 }
 
-pub fn patch_file(file: PathBuf, output: PathBuf) -> anyhow::Result<()> {
+pub fn patch_file(file: PathBuf, output: PathBuf) -> Result<(), Error> {
 	let ast = full_moon::parse(&fs::read_to_string(file.clone())?)?;
 	let mut visitor = PatchVisitor::default();
 	if output.is_file() {
-		visitor.output = output.parent().expect("File has a parent").to_path_buf();
+		visitor.output = output.parent().expect("Output has a parent").to_path_buf();
 	} else {
 		visitor.output = output;
 	}
@@ -168,23 +171,28 @@ pub fn patch_file(file: PathBuf, output: PathBuf) -> anyhow::Result<()> {
 	Ok(())
 }
 
-pub fn patch_directory(path: PathBuf) -> anyhow::Result<()> {
-	let directory = path.read_dir()?;
+pub fn patch_directory(path: PathBuf) -> Result<(), Vec<Error>> {
+	let directory = path.read_dir().map_err(|e| vec![e.into()])?;
+	let mut errors = Vec::new();
 	directory.for_each(|entry| match entry {
 		Ok(entry) => {
 			let file = entry.path();
 			match patch_file(file, path.clone()) {
 				Ok(..) => {}
-				Err(error) => error!("{error}"),
+				Err(error) => errors.push(error),
 			}
 		}
-		Err(error) => error!("{error}"),
+		Err(error) => errors.push(error.into()),
 	});
+
+	if errors.len() > 0 {
+		return Err(errors);
+	}
 
 	Ok(())
 }
 
-pub fn build(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+pub fn build(input: PathBuf, output: PathBuf) -> Result<(), Vec<Error>> {
 	if input.is_dir() != output.is_dir() {
 		error!("The input path should be the same type of PathBuf as the output path.");
 		return Ok(());
@@ -210,7 +218,7 @@ pub fn build(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::
 	.result();
 
 	if result.is_err() {
-		let errors = result.unwrap_err();
+		let errors = result.as_ref().unwrap_err();
 		error!(
 			"{} {} in darklua processing",
 			errors.len(),
@@ -219,15 +227,12 @@ pub fn build(input: PathBuf, output: PathBuf) -> Result<(), Box<dyn std::error::
 				false => "error",
 			}
 		);
-		for error in errors {
-			error!("{error}");
-		}
-		return Ok(());
+		return result.map_err(|e| vec![Error::Darklua(e)]);
 	}
 
 	match output.is_dir() {
 		true => patch_directory(output.clone())?,
-		false => patch_file(output.clone(), output)?,
+		false => patch_file(output.clone(), output).map_err(|e| vec![e])?,
 	}
 
 	Ok(())

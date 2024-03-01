@@ -1,23 +1,24 @@
 use std::path::{Path, PathBuf};
 
+use crate::ast_handler::build;
+use crate::error;
 use iced::widget::{
 	self, button, column, container, pick_list, row, slider, space, text, text_input, Row,
 };
 use iced::{executor, Font, Renderer, Theme};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Subscription};
-use native_dialog::{FileDialog, MessageDialog, MessageType};
+use native_dialog::FileDialog;
 use tracing::info;
-
-use crate::ast_handler::build;
 
 pub fn run() -> iced::Result {
 	App::run(Settings::default())
 }
 
+#[derive(Debug)]
 enum BuildStatus {
 	Unbuilt,
 	Building,
-	ErrorBuilding,
+	ErrorBuilding(Vec<error::Error>),
 	Built,
 	Rebuilding,
 }
@@ -40,7 +41,7 @@ enum PickedDirectory {
 #[derive(Debug, Clone)]
 enum Message {
 	Build,
-	FinishedBuilding(Option<()>),
+	FinishedBuilding(Result<(), Vec<error::Error>>),
 	PickDirectory(PickedDirectory),
 	FinishedPicking((PickedDirectory, Option<Option<PathBuf>>)),
 }
@@ -76,16 +77,13 @@ impl Application for App {
 					self.build_status = BuildStatus::Building;
 				}
 				let (input, output) = (self.input_path.clone(), self.output_path.clone());
-				Command::perform(
-					async { build(input, output).ok() },
-					Message::FinishedBuilding,
-				)
+				Command::perform(async { build(input, output) }, Message::FinishedBuilding)
 				// Command::none()
 			}
 			Message::FinishedBuilding(option) => {
 				match option {
-					Some(..) => self.build_status = BuildStatus::Built,
-					None => self.build_status = BuildStatus::ErrorBuilding,
+					Ok(..) => self.build_status = BuildStatus::Built,
+					Err(errors) => self.build_status = BuildStatus::ErrorBuilding(errors),
 				};
 				Command::none()
 			}
@@ -127,6 +125,9 @@ impl Application for App {
 				.on_press(Message::Build)
 				.into()])
 			.into(),
+			text(format!("Status: {:?}", self.build_status))
+				.font(Font::MONOSPACE)
+				.into(),
 		])
 		.spacing(5);
 		let container = container(content)

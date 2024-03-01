@@ -1,4 +1,5 @@
 mod ast_handler;
+mod error;
 mod iced;
 
 fn main() -> anyhow::Result<()> {
