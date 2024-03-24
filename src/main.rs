@@ -1,6 +1,7 @@
 mod ast_handler;
 mod error;
 mod iced;
+mod server;
 
 fn main() -> anyhow::Result<()> {
 	tracing_subscriber::fmt().compact().without_time().init();

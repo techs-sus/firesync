@@ -1,13 +1,17 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::ast_handler::build;
 use crate::error;
+use crate::server::Server;
 use iced::widget::{
 	self, button, column, container, pick_list, row, slider, space, text, text_input, Row,
 };
 use iced::{executor, Font, Renderer, Theme};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Subscription};
 use native_dialog::FileDialog;
+use tokio::pin;
+use tokio::sync::Mutex;
 use tracing::info;
 
 pub fn run() -> iced::Result {
@@ -18,7 +22,7 @@ pub fn run() -> iced::Result {
 enum BuildStatus {
 	Unbuilt,
 	Building,
-	ErrorBuilding(Vec<error::Error>),
+	ErrorBuilding(Arc<Vec<error::Error>>),
 	Built,
 	Rebuilding,
 }
@@ -29,6 +33,8 @@ struct App {
 	input_path: PathBuf,
 	output_path: PathBuf,
 	config_path: PathBuf,
+
+	development_server: Arc<Mutex<Server>>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +47,11 @@ enum PickedDirectory {
 #[derive(Debug, Clone)]
 enum Message {
 	Build,
-	FinishedBuilding(Result<(), Vec<error::Error>>),
+	FinishedBuilding(Result<(), Arc<Vec<error::Error>>>),
+	StartDevelopmentServer,
+	StartedDevelopmentServer,
+	StopDevelopmentServer,
+	StoppedDevelopmentServer,
 	PickDirectory(PickedDirectory),
 	FinishedPicking((PickedDirectory, Option<Option<PathBuf>>)),
 }
@@ -59,6 +69,7 @@ impl Application for App {
 				input_path: PathBuf::new(),
 				output_path: PathBuf::new(),
 				config_path: PathBuf::new(),
+				development_server: Arc::new(Mutex::new(Server::new())),
 			},
 			Command::none(),
 		)
@@ -77,8 +88,9 @@ impl Application for App {
 					self.build_status = BuildStatus::Building;
 				}
 				let (input, output) = (self.input_path.clone(), self.output_path.clone());
-				Command::perform(async { build(input, output) }, Message::FinishedBuilding)
-				// Command::none()
+				Command::perform(async { build(input, output) }, |result| {
+					Message::FinishedBuilding(result.map_err(|e| Arc::new(e)))
+				})
 			}
 			Message::FinishedBuilding(option) => {
 				match option {
@@ -112,18 +124,42 @@ impl Application for App {
 				}
 				Command::none()
 			}
+			Message::StartDevelopmentServer => {
+				let server = self.development_server.clone();
+				Command::perform(async move { server.lock().await.start().await }, |_| {
+					Message::StartedDevelopmentServer
+				})
+			}
+			Message::StartedDevelopmentServer => Command::none(),
+			Message::StopDevelopmentServer => {
+				let server = self.development_server.clone();
+				Command::perform(async move { server.lock().await.stop() }, |_| {
+					Message::StoppedDevelopmentServer
+				})
+			}
+			Message::StoppedDevelopmentServer => Command::none(),
 		}
 	}
 
 	fn view<'a>(&'a self) -> Element<'a, Message> {
 		let content = column([
-			// todo add more
+			// TODO: Add more configuration options
 			file_picker(self.input_path.clone(), PickedDirectory::Input).into(),
 			file_picker(self.output_path.clone(), PickedDirectory::Output).into(),
 			file_picker(self.config_path.clone(), PickedDirectory::Config).into(),
-			row([button(text("Build!").font(Font::MONOSPACE))
-				.on_press(Message::Build)
-				.into()])
+			row([
+				button(text("Build!").font(Font::MONOSPACE))
+					.on_press(Message::Build)
+					.into(),
+				// TODO: Add task log + build log from development server
+				// TODO: Also add notify-rs log into UI
+				button(text("Start development server").font(Font::MONOSPACE))
+					.on_press(Message::StartDevelopmentServer)
+					.into(),
+				button(text("Stop development server").font(Font::MONOSPACE))
+					.on_press(Message::StopDevelopmentServer)
+					.into(),
+			])
 			.into(),
 			text(format!("Status: {:?}", self.build_status))
 				.font(Font::MONOSPACE)

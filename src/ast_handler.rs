@@ -208,7 +208,6 @@ pub fn build(input: PathBuf, output: PathBuf) -> Result<(), Vec<Error>> {
 		return Ok(());
 	}
 
-	// TODO: Add field into args for config path
 	let result = darklua_core::process(
 		&Resources::from_file_system(),
 		Options::new(input.clone())

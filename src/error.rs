@@ -1,26 +1,31 @@
 use darklua_core::DarkluaError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+	#[error("Error in darklua: {0:?}")]
 	Darklua(Vec<DarkluaError>),
-	Io(std::io::ErrorKind),
-	FullMoon(full_moon::Error),
-}
 
-impl From<std::io::Error> for Error {
-	fn from(value: std::io::Error) -> Self {
-		Self::Io(value.kind())
-	}
+	#[error("IO error: {0}")]
+	Io(#[from] std::io::Error),
+
+	#[error("Error in full_moon (AST): {0}")]
+	FullMoon(#[from] full_moon::Error),
+
+	#[error("Error in localtunnel")]
+	Localtunnel,
+
+	#[error("Error while connecting to localtunnel")]
+	LocaltunnelConnect,
+
+	#[error("Error while disconnecting to localtunnel")]
+	LocaltunnelDisconnect,
+
+	#[error("Error while adding paths to fs watcher: {0}")]
+	NotifyAddPaths(#[from] notify::Error),
 }
 
 impl From<Vec<DarkluaError>> for Error {
 	fn from(value: Vec<DarkluaError>) -> Self {
 		Self::Darklua(value)
-	}
-}
-
-impl From<full_moon::Error> for Error {
-	fn from(value: full_moon::Error) -> Self {
-		Self::FullMoon(value)
 	}
 }
