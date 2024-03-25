@@ -1,1 +1,1 @@
-NLS([==[NS('file.server.lua')]==],owner.PlayerGui)
+NLS('./test.client.lua',owner.PlayerGui)'\r\n\t[==\r\n\t]==]\r\n'

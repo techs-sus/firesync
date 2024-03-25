@@ -1,18 +1,18 @@
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+// TODO: Implement config loading (see firesync.json)
 
 use crate::ast_handler::build;
 use crate::error;
 use crate::server::Server;
 use iced::widget::{
-	self, button, column, container, pick_list, row, slider, space, text, text_input, Row,
+	button, column, container, pick_list, row, slider, space, text, text_input, Row,
 };
-use iced::{executor, Font, Renderer, Theme};
+use iced::{executor, subscription, Font, Renderer, Theme};
 use iced::{Alignment, Application, Command, Element, Length, Settings, Subscription};
 use native_dialog::FileDialog;
-use tokio::pin;
+use serde::Deserialize;
+use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::info;
 
 pub fn run() -> iced::Result {
 	App::run(Settings::default())
@@ -27,21 +27,26 @@ enum BuildStatus {
 	Rebuilding,
 }
 
-struct App {
-	build_status: BuildStatus,
-
-	input_path: PathBuf,
-	output_path: PathBuf,
-	config_path: PathBuf,
-
-	development_server: Arc<Mutex<Server>>,
+#[derive(Debug)]
+enum ServerStatus {
+	Running,
+	Loading,
+	Stopped,
 }
 
-#[derive(Debug, Clone)]
-enum PickedDirectory {
-	Input,
-	Output,
-	Config,
+#[derive(Clone, Default, Deserialize)]
+struct Config {
+	input: PathBuf,
+	output: PathBuf,
+	darklua_configuration: PathBuf,
+}
+
+struct App {
+	build_status: BuildStatus,
+	server_status: ServerStatus,
+	config: Config,
+	config_path: PathBuf,
+	development_server: Arc<Mutex<Server>>,
 }
 
 #[derive(Debug, Clone)]
@@ -52,8 +57,8 @@ enum Message {
 	StartedDevelopmentServer,
 	StopDevelopmentServer,
 	StoppedDevelopmentServer,
-	PickDirectory(PickedDirectory),
-	FinishedPicking((PickedDirectory, Option<Option<PathBuf>>)),
+	PickConfigurationPath,
+	FinishedPicking(Option<Option<PathBuf>>),
 }
 
 impl Application for App {
@@ -66,8 +71,8 @@ impl Application for App {
 		(
 			App {
 				build_status: BuildStatus::Unbuilt,
-				input_path: PathBuf::new(),
-				output_path: PathBuf::new(),
+				server_status: ServerStatus::Stopped,
+				config: Config::default(),
 				config_path: PathBuf::new(),
 				development_server: Arc::new(Mutex::new(Server::new())),
 			},
@@ -87,9 +92,9 @@ impl Application for App {
 				} else {
 					self.build_status = BuildStatus::Building;
 				}
-				let (input, output) = (self.input_path.clone(), self.output_path.clone());
+				let (input, output) = (self.config.input.clone(), self.config.output.clone());
 				Command::perform(async { build(input, output) }, |result| {
-					Message::FinishedBuilding(result.map_err(|e| Arc::new(e)))
+					Message::FinishedBuilding(result.map_err(Arc::new))
 				})
 			}
 			Message::FinishedBuilding(option) => {
@@ -99,67 +104,68 @@ impl Application for App {
 				};
 				Command::none()
 			}
-			Message::PickDirectory(directory) => {
-				if let PickedDirectory::Config = directory {
-					Command::perform(
-						async { (directory, FileDialog::new().show_open_single_file().ok()) },
-						Message::FinishedPicking,
-					)
-				} else {
-					Command::perform(
-						async { (directory, FileDialog::new().show_open_single_dir().ok()) },
-						Message::FinishedPicking,
-					)
-				}
-			}
-			Message::FinishedPicking((directory, path)) => {
-				if let Some(path) = path {
-					if let Some(path) = path {
-						match directory {
-							PickedDirectory::Input => self.input_path = path,
-							PickedDirectory::Output => self.output_path = path,
-							PickedDirectory::Config => self.config_path = path,
-						}
-					}
+			Message::PickConfigurationPath => Command::perform(
+				async { FileDialog::new().show_open_single_file().ok() },
+				Message::FinishedPicking,
+			),
+			Message::FinishedPicking(path) => {
+				if let Some(Some(path)) = path {
+					self.config_path = path.clone();
+					// TODO: We shouldn't panic if its invalid json
+					self.config =
+						serde_json::from_str(&std::fs::read_to_string(path).expect("To read firesync.json"))
+							.expect("Valid firesync.json");
 				}
 				Command::none()
 			}
 			Message::StartDevelopmentServer => {
+				self.server_status = ServerStatus::Loading;
+
 				let server = self.development_server.clone();
 				Command::perform(async move { server.lock().await.start().await }, |_| {
 					Message::StartedDevelopmentServer
 				})
 			}
-			Message::StartedDevelopmentServer => Command::none(),
+			Message::StartedDevelopmentServer => {
+				self.server_status = ServerStatus::Running;
+				Command::none()
+			}
 			Message::StopDevelopmentServer => {
+				self.server_status = ServerStatus::Loading;
+
 				let server = self.development_server.clone();
 				Command::perform(async move { server.lock().await.stop() }, |_| {
 					Message::StoppedDevelopmentServer
 				})
 			}
-			Message::StoppedDevelopmentServer => Command::none(),
+			Message::StoppedDevelopmentServer => {
+				self.server_status = ServerStatus::Stopped;
+				Command::none()
+			}
 		}
 	}
 
-	fn view<'a>(&'a self) -> Element<'a, Message> {
+	fn view(&self) -> Element<'_, Message> {
 		let content = column([
 			// TODO: Add more configuration options
-			file_picker(self.input_path.clone(), PickedDirectory::Input).into(),
-			file_picker(self.output_path.clone(), PickedDirectory::Output).into(),
-			file_picker(self.config_path.clone(), PickedDirectory::Config).into(),
+			file_picker(self.config_path.clone()).into(),
 			row([
 				button(text("Build!").font(Font::MONOSPACE))
 					.on_press(Message::Build)
 					.into(),
-				// TODO: Add task log + build log from development server
+				// TODO: Add task log + build log from development server (subscriptions)
 				// TODO: Also add notify-rs log into UI
-				button(text("Start development server").font(Font::MONOSPACE))
-					.on_press(Message::StartDevelopmentServer)
-					.into(),
-				button(text("Stop development server").font(Font::MONOSPACE))
-					.on_press(Message::StopDevelopmentServer)
-					.into(),
+				match self.server_status {
+					ServerStatus::Running => button(text("Stop server").font(Font::MONOSPACE))
+						.on_press(Message::StopDevelopmentServer)
+						.into(),
+					ServerStatus::Loading => button(text("Server loading").font(Font::MONOSPACE)).into(),
+					ServerStatus::Stopped => button(text("Start server").font(Font::MONOSPACE))
+						.on_press(Message::StartDevelopmentServer)
+						.into(),
+				},
 			])
+			.spacing(5)
 			.into(),
 			text(format!("Status: {:?}", self.build_status))
 				.font(Font::MONOSPACE)
@@ -175,23 +181,20 @@ impl Application for App {
 		container.into()
 	}
 
+	// TODO: We want a channel subscription (https://github.com/iced-rs/iced/blob/0.12/examples/websocket/src/echo.rs#L16)
+	// fn subscription(&self) -> Subscription<Self::Message> {
+	// 	subscription::unfold(0, "", move |state| async { (Message::Build, "") })
+	// }
+
 	fn theme(&self) -> Self::Theme {
 		Theme::GruvboxDark
 	}
 }
 
-fn file_picker<'a>(path: PathBuf, directory: PickedDirectory) -> Row<'a, Message, Theme, Renderer> {
-	let text_content = format!(
-		"Pick the {}",
-		match directory.clone() {
-			PickedDirectory::Input => "input directory",
-			PickedDirectory::Output => "output directory",
-			PickedDirectory::Config => "configuration file",
-		}
-	);
+fn file_picker<'a>(path: PathBuf) -> Row<'a, Message, Theme, Renderer> {
 	row([
-		button(text(text_content).font(Font::MONOSPACE))
-			.on_press(Message::PickDirectory(directory.clone()))
+		button(text("Select a firesync.json").font(Font::MONOSPACE))
+			.on_press(Message::PickConfigurationPath)
 			.into(),
 		text(path.display()).font(Font::MONOSPACE).into(),
 	])

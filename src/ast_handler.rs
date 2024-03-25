@@ -1,10 +1,8 @@
-use anyhow::Context as _;
+use crate::error::Error;
 use darklua_core::{Options, Resources};
 use full_moon::{ast, tokenizer, visitors::VisitorMut};
 use std::{fs, path::PathBuf};
 use tracing::{error, info};
-
-use crate::error::Error;
 
 #[derive(Default)]
 struct PatchVisitor {
@@ -38,7 +36,7 @@ impl VisitorMut for PatchVisitor {
 
 		match prefix {
 			// This would be ("foo")(1), which is not what we want
-			ast::Prefix::Expression(_) => return node,
+			ast::Prefix::Expression(_) => node,
 			ast::Prefix::Name(token_reference) => {
 				// We want the token and its type which contains the name of the function
 				let function_name = get_string_from_token_reference(token_reference)
@@ -113,7 +111,7 @@ impl VisitorMut for PatchVisitor {
 								}
 								ast::FunctionArgs::String(string) => {
 									//
-									let file_name = match get_string_from_token_reference(&string) {
+									let file_name = match get_string_from_token_reference(string) {
 										Some(s) => s,
 										None => return node,
 									};
@@ -150,9 +148,9 @@ impl VisitorMut for PatchVisitor {
 					}
 					&_ => {}
 				}
-				return node;
+				node
 			}
-			_ => return node,
+			_ => node,
 		}
 	}
 }
@@ -185,7 +183,7 @@ pub fn patch_directory(path: PathBuf) -> Result<(), Vec<Error>> {
 		Err(error) => errors.push(error.into()),
 	});
 
-	if errors.len() > 0 {
+	if !errors.is_empty() {
 		return Err(errors);
 	}
 

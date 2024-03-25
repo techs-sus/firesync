@@ -1,6 +1,7 @@
 use super::PORT;
 use axum::{routing::get, Router};
 use tokio::task::AbortHandle;
+use tracing::info;
 
 #[derive(Debug)]
 pub struct AxumServer {
@@ -19,6 +20,7 @@ impl AxumServer {
 			let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{PORT}"))
 				.await
 				.unwrap();
+			info!("starting axum thread");
 			axum::serve(listener, app).await.unwrap();
 		});
 		self.abort_handle = Some(handle.abort_handle());
@@ -26,6 +28,7 @@ impl AxumServer {
 
 	pub fn stop(&mut self) {
 		if let Some(handle) = &self.abort_handle {
+			info!("aborting axum thread");
 			handle.abort();
 			self.abort_handle = None;
 		}

@@ -1,1 +1,1 @@
-NLS([==[NS('file.server.lua')]==])
+NLS([==[print('client')]==])

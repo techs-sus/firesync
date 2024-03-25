@@ -1106,6 +1106,8 @@ dependencies = [
  "native-dialog",
  "notify",
  "notify-debouncer-full",
+ "serde",
+ "serde_json",
  "thiserror",
  "tokio",
  "tracing",
@@ -1760,6 +1762,7 @@ dependencies = [
  "futures",
  "iced_core",
  "log",
+ "tokio",
  "wasm-bindgen-futures",
  "wasm-timer",
 ]

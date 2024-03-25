@@ -1,6 +1,9 @@
+// TODO: Implement our own localtunnel connection (avoids using localtunnel_client, as it spams tracing)
+
 use super::{HOST, PORT};
 use crate::error::Error;
 use localtunnel_client::{broadcast, open_tunnel, ClientConfig};
+use tracing::info;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -19,10 +22,9 @@ impl Tunnel {
 
 	pub async fn connect(&mut self) -> Result<(), Error> {
 		let subdomain = Uuid::new_v4();
-		// todo: serve with axum
 
 		let config = ClientConfig {
-			server: Some("https://init.so".to_string()),
+			server: Some("https://localtunnel.me".to_string()),
 			subdomain: Some(subdomain.to_string()),
 			local_host: Some(HOST.to_string()),
 			local_port: PORT,
@@ -37,8 +39,7 @@ impl Tunnel {
 
 		self.url = Some(result);
 
-		// Shutdown the background tasks by sending a signal.
-		// let _ = notify_shutdown.send(());
+		info!("localtunnel connected: {0:?}", self.url);
 
 		Ok(())
 	}
@@ -49,6 +50,8 @@ impl Tunnel {
 			.notify_shutdown
 			.send(())
 			.map_err(|_| Error::LocaltunnelDisconnect)?;
+		info!("localtunnel disconnected");
+
 		Ok(())
 	}
 }

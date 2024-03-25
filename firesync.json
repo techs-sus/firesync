@@ -1,0 +1,5 @@
+{
+	"input": "test",
+	"output": "test_out",
+	"darklua_configuration": ".darklua.json"
+}

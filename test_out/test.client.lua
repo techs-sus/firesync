@@ -1,1 +1,1 @@
-NS([==[NLS([==[NS('file.server.lua')]==],owner.PlayerGui)]==])
+print('client')
