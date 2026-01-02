@@ -2,6 +2,10 @@
 
 firesync is a command line program designed to serve bundled files
 
+## Deprecation notice
+
+You should not use this in new work! Use [roblox-ts-with-azalea](https://github.com/techs-sus/roblox-ts-with-azalea) instead.
+
 ## how?
 
 - Bundle with darklua
